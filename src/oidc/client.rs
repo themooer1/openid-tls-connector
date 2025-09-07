@@ -8,7 +8,7 @@ enum AuthResult {
 }
 
 // Authenticates OIDC clients and retrieves their redirect URIs.
-trait ClientManager {
+pub trait ClientManager {
     async fn authenticate_client(&self, client_id: &str, client_secret: &str) -> AuthResult;
     async fn get_redirect_uri(&self, client_id: &str) -> Result<Url, Box<dyn Error>>;
 }
