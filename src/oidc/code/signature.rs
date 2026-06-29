@@ -95,7 +95,7 @@ mod tests {
         AuthorizationCode {
             client_id: "test-client".to_string(),
             redirect_uri: "https://app.example/cb".to_string(),
-            code_challenge: "challenge123".to_string(),
+            code_challenge: Some("challenge123".to_string()),
             code_challenge_method: CodeChallengeMethod::S256,
             timestamp: SystemTime::now(),
             subject: "test-user".to_string(),

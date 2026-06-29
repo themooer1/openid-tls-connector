@@ -50,6 +50,12 @@ impl AppState {
 }
 
 /// Query parameters for `GET /authorize` (RFC 6749 §4.1.1 + OIDC + PKCE).
+///
+/// `code_challenge` and `code_challenge_method` are optional: PKCE is an
+/// extension (RFC 7636), not a requirement of the base OIDC spec, so a
+/// confidential client may legitimately omit it. Public clients should
+/// always send it, but this server does not currently distinguish public
+/// from confidential clients at the authorize endpoint.
 #[derive(Debug, Deserialize)]
 pub struct AuthorizeParams {
     pub response_type: String,
@@ -58,20 +64,28 @@ pub struct AuthorizeParams {
     #[serde(default)]
     pub scope: Option<String>,
     pub state: Option<String>,
-    pub code_challenge: String,
+    #[serde(default)]
+    pub code_challenge: Option<String>,
+    #[serde(default)]
     pub code_challenge_method: Option<String>,
     pub nonce: Option<String>,
 }
 
 /// Form parameters for `POST /token` (RFC 6749 §4.1.3).
+///
+/// `code_verifier` is optional: it's only required when the corresponding
+/// `/authorize` request sent a `code_challenge`. If no challenge was
+/// stored on the code, the verifier is ignored.
 #[derive(Debug, Deserialize)]
 pub struct TokenParams {
     pub grant_type: String,
     pub code: String,
     pub redirect_uri: String,
-    pub code_verifier: String,
+    #[serde(default)]
+    pub code_verifier: Option<String>,
     pub client_id: Option<String>,
     /// Required for confidential clients; ignored for public clients.
+    #[serde(default)]
     pub client_secret: Option<String>,
 }
 
@@ -134,6 +148,9 @@ async fn authorize_handler(
     // not a redirect error.
     let _response_type = ResponseType::from_str(&params.response_type)?;
 
+    // PKCE: if a code_challenge is present, parse the method. If absent,
+    // PKCE is simply not used for this request (the code will be issued
+    // without a challenge and the token endpoint won't require a verifier).
     let code_challenge_method = match params.code_challenge_method.as_deref() {
         Some("S256") => CodeChallengeMethod::S256,
         Some("plain") | None => CodeChallengeMethod::Plain,
@@ -186,7 +203,7 @@ async fn authorize_handler(
     let (_, encoded_code) = state.flow.authorization_request(AuthorizationRequest {
         client_id: &params.client_id,
         redirect_uri: &params.redirect_uri,
-        code_challenge: &params.code_challenge,
+        code_challenge: params.code_challenge.as_deref(),
         code_challenge_method,
         subject: &user.subject,
         nonce: params.nonce.as_deref(),
@@ -225,7 +242,7 @@ async fn token_handler(
             client_secret: params.client_secret.as_deref(),
             code: &params.code,
             redirect_uri: &params.redirect_uri,
-            code_verifier: &params.code_verifier,
+            code_verifier: params.code_verifier.as_deref(),
         },
         &state.token_context(),
     )?;

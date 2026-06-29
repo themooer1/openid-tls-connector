@@ -106,11 +106,16 @@ pub struct TokenResponse {
 }
 
 /// Input parameters for an authorization request (the `/authorize` flow).
+///
+/// `code_challenge` is optional: PKCE (RFC 7636) is an extension, not a
+/// requirement of the base OIDC spec. If `Some`, the token endpoint will
+/// require a matching `code_verifier`. If `None`, no PKCE verification is
+/// performed.
 #[derive(Debug, Clone)]
 pub struct AuthorizationRequest<'a> {
     pub client_id: &'a str,
     pub redirect_uri: &'a str,
-    pub code_challenge: &'a str,
+    pub code_challenge: Option<&'a str>,
     pub code_challenge_method: CodeChallengeMethod,
     pub subject: &'a str,
     pub nonce: Option<&'a str>,
@@ -119,6 +124,10 @@ pub struct AuthorizationRequest<'a> {
 }
 
 /// Input parameters for a token request (the `/token` flow).
+///
+/// `code_verifier` is optional: it's only required when the corresponding
+/// `/authorize` request sent a `code_challenge`. If the stored code has no
+/// challenge, the verifier is ignored.
 #[derive(Debug, Clone)]
 pub struct AccessTokenRequest<'a> {
     pub grant_type: GrantType,
@@ -126,7 +135,7 @@ pub struct AccessTokenRequest<'a> {
     pub client_secret: Option<&'a str>,
     pub code: &'a str,
     pub redirect_uri: &'a str,
-    pub code_verifier: &'a str,
+    pub code_verifier: Option<&'a str>,
 }
 
 /// Collaborators needed to issue tokens at the `/token` endpoint. Grouped to
@@ -167,7 +176,7 @@ impl OIDCAuthCodePKCEFlow {
         let code = AuthorizationCode {
             client_id: req.client_id.to_string(),
             redirect_uri: req.redirect_uri.to_string(),
-            code_challenge: req.code_challenge.to_string(),
+            code_challenge: req.code_challenge.map(|s| s.to_string()),
             code_challenge_method: req.code_challenge_method,
             timestamp: SystemTime::now(),
             subject: req.subject.to_string(),
@@ -388,7 +397,7 @@ mod tests {
             .authorization_request(AuthorizationRequest {
                 client_id: CLIENT_ID,
                 redirect_uri: REDIRECT_URI,
-                code_challenge: &challenge,
+                code_challenge: Some(&challenge),
                 code_challenge_method: CodeChallengeMethod::S256,
                 subject: "alice",
                 nonce: Some("nonce-xyz"),
@@ -407,7 +416,7 @@ mod tests {
             .authorization_request(AuthorizationRequest {
                 client_id: CLIENT_ID,
                 redirect_uri: REDIRECT_URI,
-                code_challenge: &challenge,
+                code_challenge: Some(&challenge),
                 code_challenge_method: CodeChallengeMethod::S256,
                 subject: "alice",
                 nonce: Some("nonce-1"),
@@ -443,7 +452,7 @@ mod tests {
                     client_secret: None,
                     code: &code,
                     redirect_uri: REDIRECT_URI,
-                    code_verifier: verifier,
+                    code_verifier: Some(verifier),
                 },
                 &ctx,
             )
@@ -480,7 +489,7 @@ mod tests {
                 client_secret: None,
                 code: &code,
                 redirect_uri: REDIRECT_URI,
-                code_verifier: "wrong-verifier",
+                code_verifier: Some("wrong-verifier"),
             },
             &ctx,
         );
@@ -505,7 +514,7 @@ mod tests {
                 client_secret: None,
                 code: &code,
                 redirect_uri: REDIRECT_URI,
-                code_verifier: "verifier",
+                code_verifier: Some("verifier"),
             },
             &ctx,
         );
@@ -532,7 +541,7 @@ mod tests {
                 client_secret: None,
                 code: &code,
                 redirect_uri: REDIRECT_URI,
-                code_verifier: verifier,
+                code_verifier: Some(verifier),
             },
             &ctx,
         );
@@ -557,7 +566,7 @@ mod tests {
             client_secret: None,
             code: &code,
             redirect_uri: REDIRECT_URI,
-            code_verifier: verifier,
+            code_verifier: Some(verifier),
         };
 
         // First redemption succeeds.
@@ -581,7 +590,7 @@ mod tests {
             .authorization_request(AuthorizationRequest {
                 client_id: "confidential",
                 redirect_uri: REDIRECT_URI,
-                code_challenge: &challenge,
+                code_challenge: Some(&challenge),
                 code_challenge_method: CodeChallengeMethod::S256,
                 subject: "bob",
                 nonce: None,
@@ -598,7 +607,7 @@ mod tests {
                 client_secret: None,
                 code: &code,
                 redirect_uri: REDIRECT_URI,
-                code_verifier: verifier,
+                code_verifier: Some(verifier),
             },
             &ctx,
         );
@@ -612,7 +621,7 @@ mod tests {
                 client_secret: Some("wrong"),
                 code: &code,
                 redirect_uri: REDIRECT_URI,
-                code_verifier: verifier,
+                code_verifier: Some(verifier),
             },
             &ctx,
         );
@@ -633,7 +642,7 @@ mod tests {
             .authorization_request(AuthorizationRequest {
                 client_id: "confidential",
                 redirect_uri: REDIRECT_URI,
-                code_challenge: &challenge,
+                code_challenge: Some(&challenge),
                 code_challenge_method: CodeChallengeMethod::S256,
                 subject: "bob",
                 nonce: None,
@@ -650,7 +659,7 @@ mod tests {
                     client_secret: Some("s3cr3t"),
                     code: &code,
                     redirect_uri: REDIRECT_URI,
-                    code_verifier: verifier,
+                    code_verifier: Some(verifier),
                 },
                 &ctx,
             )

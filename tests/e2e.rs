@@ -655,7 +655,7 @@ async fn test_protocol_full_flow_s256() {
         .authorization_request(AuthorizationRequest {
             client_id: TEST_CLIENT_ID,
             redirect_uri: TEST_REDIRECT_URI,
-            code_challenge: &challenge,
+            code_challenge: Some(&challenge),
             code_challenge_method: CodeChallengeMethod::S256,
             subject: "test-user",
             nonce: Some("my-nonce"),
@@ -677,7 +677,7 @@ async fn test_protocol_full_flow_s256() {
                 client_secret: None,
                 code: &code_encoded,
                 redirect_uri: TEST_REDIRECT_URI,
-                code_verifier: &verifier,
+                code_verifier: Some(&verifier),
             },
             &ctx,
         )
@@ -728,7 +728,7 @@ async fn test_protocol_full_flow_plain_pkce() {
         .authorization_request(AuthorizationRequest {
             client_id: TEST_CLIENT_ID,
             redirect_uri: TEST_REDIRECT_URI,
-            code_challenge: verifier,
+            code_challenge: Some(verifier),
             code_challenge_method: CodeChallengeMethod::Plain,
             subject: "test-user",
             nonce: None,
@@ -750,7 +750,7 @@ async fn test_protocol_full_flow_plain_pkce() {
                 client_secret: None,
                 code: &code_encoded,
                 redirect_uri: TEST_REDIRECT_URI,
-                code_verifier: verifier,
+                code_verifier: Some(verifier),
             },
             &ctx,
         )
@@ -775,7 +775,7 @@ async fn test_protocol_wrong_verifier_fails() {
         .authorization_request(AuthorizationRequest {
             client_id: TEST_CLIENT_ID,
             redirect_uri: TEST_REDIRECT_URI,
-            code_challenge: &challenge,
+            code_challenge: Some(&challenge),
             code_challenge_method: CodeChallengeMethod::S256,
             subject: "test-user",
             nonce: None,
@@ -791,7 +791,7 @@ async fn test_protocol_wrong_verifier_fails() {
             client_secret: None,
             code: &code_encoded,
             redirect_uri: TEST_REDIRECT_URI,
-            code_verifier: "wrong-verifier",
+            code_verifier: Some("wrong-verifier"),
         },
         &ctx,
     );
