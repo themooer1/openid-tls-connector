@@ -1,0 +1,48 @@
+{
+    "description": "openid-tls-connector OIDC Basic Certification Profile (auth code + PKCE)",
+    "alias": "localtest",
+    "server": {
+        "discoveryUrl": "https://op-nginx/.well-known/openid-configuration"
+    },
+    "client": {
+        "client_id": "conformance-client",
+        "client_secret": "conformance-secret",
+        "scope": "openid"
+    },
+    "client2": {
+        "client_id": "conformance-client2",
+        "client_secret": "conformance-secret2",
+        "scope": "openid"
+    },
+    "browser": [
+        {
+            "comment": "openid-tls-connector has no login/consent UI — the mTLS header injected by op-nginx auto-logs the user in, so /authorize immediately 302s back to the conformance suite callback. We just wait for the submission_complete marker on the callback page.",
+            "match": "https://op-nginx/authorize*",
+            "tasks": [
+                {
+                    "task": "Verify Complete",
+                    "match": "https://conformance-nginx:8443/test/a/localtest/callback*",
+                    "commands": [
+                        ["wait", "id", "submission_complete", 10]
+                    ]
+                }
+            ]
+        },
+        {
+            "comment": "Some test modules (e.g. the second-client flow) use a different alias; handle that callback too.",
+            "match": "https://op-nginx/authorize*",
+            "tasks": [
+                {
+                    "task": "Verify Complete",
+                    "match": "https://conformance-nginx:8443/test/a/localtest2/callback*",
+                    "commands": [
+                        ["wait", "id", "submission_complete", 10]
+                    ]
+                }
+            ]
+        }
+    ],
+    "options": {
+        "browsercontrol_css_enable": false
+    }
+}

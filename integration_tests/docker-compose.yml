@@ -1,0 +1,97 @@
+# Integration-tests docker-compose.
+#
+# Brings up:
+#   - mongodb              backend store for the conformance suite
+#   - conformance-nginx    HTTPS reverse proxy for the conformance suite (8443)
+#   - conformance-server   the OpenID Foundation conformance suite
+#   - op-nginx             HTTPS reverse proxy in front of our OIDC provider;
+#                          injects the X-Client-Cert-Subject header that
+#                          simulates mTLS-based auto-login
+#   - openid-provider      the Rust OIDC provider under test
+#
+# The conformance-server uses the OIDF's prebuilt image from
+# registry.gitlab.com/openid/conformance-suite:latest. If you see an
+# authentication error on `docker pull`, run `docker logout
+# registry.gitlab.com` and retry.
+#
+# Once the stack is up, run integration_tests/run-tests.sh to drive the
+# oidcc-basic-certification-test-plan against it via the suite's
+# scripts/run-test-plan.py.
+
+services:
+  mongodb:
+    image: mongo:6.0.13
+    volumes:
+      - mongo-data:/data/db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500k"
+        max-file: "5"
+
+  # The conformance suite's own HTTPS-terminating nginx. Built from a
+  # local copy of the suite's nginx config adapted to use our
+  # `conformance-server` upstream service name (the vendored config uses
+  # `server`, which doesn't match our compose service name).
+  conformance-nginx:
+    build:
+      context: ./conformance-nginx
+    ports:
+      - "8443:8443"
+    depends_on:
+      - conformance-server
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500k"
+        max-file: "5"
+
+  conformance-server:
+    image: registry.gitlab.com/openid/conformance-suite:latest
+    environment:
+      # The base_url is the URL the suite advertises to clients (and to its
+      # own headless browser) for its callback endpoint. Using the docker
+      # service name `conformance-nginx` keeps everything on the internal
+      # network — the browser running inside this container resolves that
+      # name via docker DNS.
+      BASE_URL: https://conformance-nginx:8443
+      MONGODB_HOST: mongodb
+      # `dev` profile enables fintechlabs.devmode (no real login required to
+      # drive the suite's REST API) and the startredir helper that lets the
+      # Python orchestrator create test plans without a browser.
+      SPRING_PROFILES_ACTIVE: dev
+      OIDC_GOOGLE_CLIENTID: google-client
+      OIDC_GOOGLE_SECRET: google-secret
+      OIDC_GITLAB_CLIENTID: gitlab-client
+      OIDC_GITLAB_SECRET: gitlab-secret
+    depends_on:
+      - mongodb
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500k"
+        max-file: "5"
+
+  # Our Rust OIDC provider, built from the repo root Dockerfile.
+  openid-provider:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    volumes:
+      - ./oidc-provider/config.toml:/app/secrets/config.toml:ro
+      - ./oidc-provider/signing_key.pem:/app/secrets/signing_key.pem:ro
+    command: ["/app/secrets/config.toml"]
+    depends_on: []
+
+  # nginx in front of our OIDC provider. Terminates TLS with a self-signed
+  # cert (the conformance suite requires HTTPS endpoints in the discovery
+  # document) and injects the X-Client-Cert-Subject header that the
+  # provider uses to identify the user.
+  op-nginx:
+    build:
+      context: ./op-nginx
+    depends_on:
+      - openid-provider
+
+volumes:
+  mongo-data:
