@@ -138,12 +138,18 @@ mod tests {
     fn test_tampered_base64_returns_error() {
         let key = test_key();
         let code = test_code();
-        let mut encoded = code.sign_and_encode(&key);
-        // Tamper with the last character
-        let last = encoded.pop().unwrap();
-        encoded.push(if last == 'A' { 'B' } else { 'A' });
-        let result = AuthorizationCode::decode_and_verify(&encoded, &key, Duration::from_secs(60));
-        // Could be InvalidSignature or deserialization error
+        let encoded = code.sign_and_encode(&key);
+        // Tamper with a character in the middle of the payload (not the
+        // last char, which may happen to decode to the same byte under
+        // base64's last-block padding rules).
+        let mut bytes = encoded.into_bytes();
+        let i = bytes.len() / 2;
+        let original = bytes[i];
+        bytes[i] = if original == b'A' { b'B' } else { b'A' };
+        let tampered = String::from_utf8(bytes).unwrap();
+        let result = AuthorizationCode::decode_and_verify(&tampered, &key, Duration::from_secs(60));
+        // Could be InvalidSignature, InvalidBase64Encoding, or a
+        // deserialization error — any error is acceptable.
         assert!(result.is_err());
     }
 

@@ -9,6 +9,7 @@ use openid_tls_connector::oidc::protocol::{
 };
 use serde_json::Value;
 use tower::ServiceExt;
+use base64::Engine;
 
 // ---------------------------------------------------------------------------
 // Discovery & JWKS
@@ -584,6 +585,126 @@ async fn test_token_confidential_client_with_secret_succeeds() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert!(!json["access_token"].as_str().unwrap().is_empty());
     assert!(!json["id_token"].as_str().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_token_confidential_client_with_basic_auth_succeeds() {
+    // RFC 6749 §2.3.1: client_secret_basic — the client_id and
+    // client_secret are sent in an HTTP Basic Authorization header instead
+    // of the form body. This is the auth method used by the OIDC Basic
+    // Certification Profile.
+    let (challenge, verifier) = test_pkce_pair();
+    let router = build_test_router();
+
+    let uri = format!(
+        "/authorize?response_type=code&client_id=confidential&redirect_uri={}&scope=openid&state=st&code_challenge={}&code_challenge_method=S256",
+        urlencoding::encode(TEST_REDIRECT_URI),
+        urlencoding::encode(&challenge),
+    );
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&uri)
+                .header(TEST_DN_HEADER, TEST_USER_DN)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let location = response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let code = extract_param(location, "code");
+
+    // No client_id / client_secret in the form body — they come from the
+    // Basic header.
+    let body = format!(
+        "grant_type=authorization_code&code={}&redirect_uri={}&code_verifier={}",
+        urlencoding::encode(&code),
+        urlencoding::encode(TEST_REDIRECT_URI),
+        urlencoding::encode(&verifier),
+    );
+    let basic = base64::engine::general_purpose::STANDARD
+        .encode(b"confidential:s3cr3t");
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/token")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .header("authorization", format!("Basic {basic}"))
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(!json["access_token"].as_str().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_token_confidential_client_basic_auth_wrong_secret_rejected() {
+    let (challenge, verifier) = test_pkce_pair();
+    let router = build_test_router();
+
+    let uri = format!(
+        "/authorize?response_type=code&client_id=confidential&redirect_uri={}&scope=openid&state=st&code_challenge={}&code_challenge_method=S256",
+        urlencoding::encode(TEST_REDIRECT_URI),
+        urlencoding::encode(&challenge),
+    );
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&uri)
+                .header(TEST_DN_HEADER, TEST_USER_DN)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let location = response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let code = extract_param(location, "code");
+
+    let body = format!(
+        "grant_type=authorization_code&code={}&redirect_uri={}&code_verifier={}",
+        urlencoding::encode(&code),
+        urlencoding::encode(TEST_REDIRECT_URI),
+        urlencoding::encode(&verifier),
+    );
+    let basic = base64::engine::general_purpose::STANDARD
+        .encode(b"confidential:wrong-secret");
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/token")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .header("authorization", format!("Basic {basic}"))
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"], "invalid_client");
 }
 
 // ---------------------------------------------------------------------------

@@ -226,20 +226,39 @@ async fn authorize_handler(
 
 async fn token_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Form(params): Form<TokenParams>,
 ) -> Result<Json<TokenResponse>, OIDCError> {
     let grant_type = GrantType::from_str(&params.grant_type)?;
 
-    let client_id = params
-        .client_id
+    // RFC 6749 §2.3.1 allows the client to authenticate at the token
+    // endpoint either by putting client_id/client_secret in the form body
+    // (client_secret_post) or by sending an HTTP Basic Authorization
+    // header (client_secret_basic). The OIDC Basic Certification Profile
+    // uses client_secret_basic, so we must support both.
+    //
+    // If a Basic Authorization header is present, decode it and prefer it
+    // over any body-supplied credentials (per RFC 6749 §2.3.1, the
+    // Authorization header takes precedence).
+    let (basic_client_id, basic_client_secret) = parse_basic_auth(&headers);
+
+    let client_id = basic_client_id
         .as_deref()
+        .or(params.client_id.as_deref())
         .ok_or_else(|| OIDCError::InvalidRequest("Missing client_id".to_string()))?;
+
+    // Use the secret from the Basic header if present, otherwise from the
+    // body. (For public clients, both are None and the registry allows
+    // them regardless.)
+    let client_secret = basic_client_secret
+        .as_deref()
+        .or(params.client_secret.as_deref());
 
     let response = state.flow.access_token_request(
         AccessTokenRequest {
             grant_type,
             client_id,
-            client_secret: params.client_secret.as_deref(),
+            client_secret,
             code: &params.code,
             redirect_uri: &params.redirect_uri,
             code_verifier: params.code_verifier.as_deref(),
@@ -248,6 +267,39 @@ async fn token_handler(
     )?;
 
     Ok(Json(response))
+}
+
+/// Parse an RFC 2617 HTTP Basic `Authorization: Basic <base64>` header
+/// into `(client_id, client_secret)`. Returns `None` for both if the
+/// header is absent or not Basic. Malformed base64 or non-UTF-8 payloads
+/// are treated as no credentials (the token endpoint will reject the
+/// request as invalid_client).
+fn parse_basic_auth(headers: &HeaderMap) -> (Option<String>, Option<String>) {
+    let header = match headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        Some(h) => h,
+        None => return (None, None),
+    };
+    let encoded = match header.strip_prefix("Basic ").or_else(|| header.strip_prefix("basic ")) {
+        Some(e) => e.trim(),
+        None => return (None, None),
+    };
+    use base64::Engine;
+    let decoded = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+        Ok(d) => d,
+        Err(_) => return (None, None),
+    };
+    let decoded_str = match std::str::from_utf8(&decoded) {
+        Ok(s) => s,
+        Err(_) => return (None, None),
+    };
+    // The decoded payload is `client_id:client_secret`. The secret may
+    // itself contain colons (RFC 6749 §2.3.1 says the password is
+    // everything after the *first* colon).
+    let (id, secret) = match decoded_str.split_once(':') {
+        Some(pair) => pair,
+        None => return (None, None),
+    };
+    (Some(id.to_string()), Some(secret.to_string()))
 }
 
 async fn userinfo_handler(
