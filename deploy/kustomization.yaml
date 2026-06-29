@@ -1,0 +1,21 @@
+# Kustomize base for openid-tls-connector.
+#
+# Apply with: kubectl apply -k deploy/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: openid-tls-connector
+
+commonLabels:
+  app.kubernetes.io/name: openid-tls-connector
+  app.kubernetes.io/part-of: openid-tls-connector
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+  - poddisruptionbudget.yaml

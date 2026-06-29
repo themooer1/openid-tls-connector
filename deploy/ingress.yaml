@@ -1,0 +1,64 @@
+# Ingress with mTLS termination at the nginx-ingress controller.
+#
+# The ingress controller:
+#   1. Terminates TLS with the server certificate (auth-tls secret).
+#   2. Verifies the client's mTLS certificate against the client CA.
+#   3. Injects the client cert subject DN into the X-Client-Cert-Subject header.
+#   4. Proxies the request to the openid-tls-connector service.
+#
+# Prerequisites:
+#   - nginx-ingress controller installed
+#   - A TLS secret for the issuer hostname (auth.example.com)
+#   - A secret containing the client CA certificate in the ingress-nginx
+#     namespace (or same namespace, depending on your ingress controller config)
+#
+# Create the client CA secret:
+#   kubectl create secret generic client-ca \
+#     --namespace=ingress-nginx \
+#     --from-file=ca.crt=client-ca.crt
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openid-tls-connector
+  namespace: openid-tls-connector
+  labels:
+    app.kubernetes.io/name: openid-tls-connector
+  annotations:
+    # Use the nginx ingress controller.
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # mTLS: require and verify client certificates.
+    nginx.ingress.kubernetes.io/auth-tls-secret: "ingress-nginx/client-ca"
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
+    # Pass the verification result to the backend (optional, for debugging).
+    nginx.ingress.kubernetes.io/auth-tls-pass-certificate: "on"
+
+    # Inject the client cert subject DN as the X-Client-Cert-Subject header.
+    # $ssl_client_s_dn is in RFC 2253 format (e.g. "CN=alice,OU=eng,O=acme").
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header X-Client-Cert-Subject $ssl_client_s_dn;
+
+    # Limit request body size (form-encoded token requests are small).
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+
+    # Add HSTS and security headers.
+    nginx.ingress.kubernetes.io/server-snippet: |
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - auth.example.com
+      secretName: auth-tls
+  rules:
+    - host: auth.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openid-tls-connector
+                port:
+                  number: 8080

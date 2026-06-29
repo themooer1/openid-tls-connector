@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: openid-tls-connector
+  namespace: openid-tls-connector
+  labels:
+    app.kubernetes.io/name: openid-tls-connector
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openid-tls-connector

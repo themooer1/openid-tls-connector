@@ -1,0 +1,49 @@
+# Example configuration for the openid-tls-connector server.
+# Copy to config.toml and edit before running.
+
+# The canonical issuer URL. This MUST match the `iss` claim in issued tokens
+# and the `issuer` field in the discovery document. No trailing slash.
+issuer = "https://auth.example.com"
+
+# Address to bind the HTTP listener.
+listen_addr = "127.0.0.1:8080"
+
+# Maximum age (in seconds) of an authorization code before it expires.
+code_max_age_seconds = 300
+
+# 32-byte HMAC key for signing authorization codes, hex-encoded (64 hex chars).
+# Generate with: openssl rand -hex 32
+code_hmac_key = "0000000000000000000000000000000000000000000000000000000000000000"
+
+# Header injected by the reverse proxy containing the client cert subject DN.
+# Default: "X-Client-Cert-Subject"
+# user_header = "X-Client-Cert-Subject"
+
+# Which DN attribute to extract as the username (OIDC `sub`).
+# Default: "CN"
+# dn_attribute = "CN"
+
+# Token TTLs in seconds.
+# id_token_ttl_seconds = 3600
+# access_token_ttl_seconds = 3600
+
+# Path to a PKCS#8 PEM-encoded RSA private key for signing JWTs (RS256).
+# Generate with: openssl genpkey -algorithm RSA -out signing_key.pem -pkeyopt rsa_keygen_bits:2048
+signing_key_path = "signing_key.pem"
+
+# Groups assigned to every authenticated user, regardless of client.
+default_groups = ["everyone", "authenticated"]
+
+# OAuth2/OIDC client configurations.
+[[clients]]
+client_id = "spa"
+# Public client (PKCE only, no secret).
+redirect_uris = ["https://app.example/cb"]
+groups = ["spa-users", "reporting-viewers"]
+
+[[clients]]
+client_id = "backend"
+# Confidential client (must present client_secret at /token).
+client_secret = "change-me-in-production"
+redirect_uris = ["https://api.example/callback"]
+groups = ["api-callers"]

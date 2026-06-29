@@ -1,2 +1,2 @@
-mod oidc;
-mod users;
+pub mod oidc;
+pub mod users;

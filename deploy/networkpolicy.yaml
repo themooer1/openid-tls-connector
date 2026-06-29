@@ -1,0 +1,37 @@
+# NetworkPolicy restricting ingress traffic to only come from the
+# ingress-nginx namespace. This ensures that even if another pod in the
+# cluster could reach the service directly, it is blocked.
+#
+# Adjust the namespaceSelector to match your ingress controller's namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openid-tls-connector
+  namespace: openid-tls-connector
+  labels:
+    app.kubernetes.io/name: openid-tls-connector
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openid-tls-connector
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # Allow traffic from the ingress-nginx namespace.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # No outbound traffic needed (the server is stateless and does not
+    # call external services). DNS is allowed for completeness.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openid-tls-connector
+  labels:
+    app.kubernetes.io/name: openid-tls-connector
+    app.kubernetes.io/part-of: openid-tls-connector

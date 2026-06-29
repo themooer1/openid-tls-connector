@@ -1,0 +1,12 @@
+target/
+.git/
+.gitignore
+*.md
+deploy/
+config.toml
+config.example.toml
+signing_key.pem
+signing_key*.pem
+*.pem
+*.key
+PLAN.md

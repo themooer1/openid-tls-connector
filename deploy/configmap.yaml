@@ -1,0 +1,67 @@
+# ConfigMap serves as a TEMPLATE for the config.toml.
+#
+# The actual config.toml mounted into the pod comes from a Secret (see
+# secret.yaml) because it contains the HMAC key and potentially client secrets.
+#
+# Workflow:
+#   1. Copy the config.toml below into a local file.
+#   2. Edit it with real values (issuer, HMAC key, client secrets, etc.).
+#   3. Create the Secret: kubectl create secret generic openid-tls-connector-secrets \
+#        --namespace=openid-tls-connector \
+#        --from-file=config.toml=./config.toml \
+#        --from-file=signing_key.pem=./signing_key.pem
+#
+# This ConfigMap is NOT mounted by the deployment; it exists for documentation
+# and as a kubectl-editable template.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openid-tls-connector-config-template
+  namespace: openid-tls-connector
+  labels:
+    app.kubernetes.io/name: openid-tls-connector
+data:
+  config.toml: |
+    # Issuer URL — must match the `iss` claim and discovery `issuer` field.
+    # No trailing slash. This is the externally-visible URL (through the proxy).
+    issuer = "https://auth.example.com"
+
+    # Bind on all interfaces inside the container.
+    listen_addr = "0.0.0.0:8080"
+
+    # Authorization code lifetime in seconds.
+    code_max_age_seconds = 300
+
+    # HMAC key for authorization code signing (32 bytes, hex-encoded = 64 chars).
+    # Generate with: openssl rand -hex 32
+    code_hmac_key = "REPLACE_WITH_64_HEX_CHARS_FROM_openssl_rand_hex_32"
+
+    # Header injected by the reverse proxy containing the client cert subject DN.
+    user_header = "X-Client-Cert-Subject"
+
+    # DN attribute to extract as the OIDC `sub` claim.
+    dn_attribute = "CN"
+
+    # Token lifetimes in seconds.
+    id_token_ttl_seconds = 3600
+    access_token_ttl_seconds = 3600
+
+    # Path to the signing key (mounted from Secret at /app/secrets/signing_key.pem).
+    signing_key_path = "/app/secrets/signing_key.pem"
+
+    # Groups assigned to every authenticated user.
+    default_groups = ["everyone", "authenticated"]
+
+    # OAuth2/OIDC client definitions.
+    [[clients]]
+    client_id = "spa"
+    # Public client — PKCE only, no secret.
+    redirect_uris = ["https://app.example.com/cb"]
+    groups = ["spa-users", "reporting-viewers"]
+
+    [[clients]]
+    client_id = "backend"
+    # Confidential client — must present client_secret at /token.
+    client_secret = "REPLACE_WITH_A_REAL_SECRET"
+    redirect_uris = ["https://api.example.com/callback"]
+    groups = ["api-callers"]
